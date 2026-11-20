@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AudioScribe — Audio to SRT & TXT Converter</title>
+    <!-- Tailwind CSS for clean, responsive utility styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono for crisp typography and timestamps -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            200: '#e2e8f0',
+                            300: '#cbd5e1',
+                            400: '#94a3b8',
+                            500: '#64748b',
+                            600: '#475569',
+                            700: '#334155',
+                            800: '#1e293b',
+                            900: '#0f172a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom subtle scrollbars for transcript preview */
+        textarea::-webkit-scrollbar {
+            width: 8px;
+        }
+        textarea::-webkit-scrollbar-track {
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 8px;
+        }
+        textarea::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.7; }
+            50% { transform: scale(1.15); opacity: 0.25; }
+            100% { transform: scale(0.95); opacity: 0.7; }
+        }
+        .recording-pulse {
+            animation: pulse-ring 1.8s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col selection:bg-indigo-100 selection:text-indigo-900">
+
+    <!-- Toast Notification Container (Replaces alert()) -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Top Navigation Header -->
+    <header class="bg-white border-b border-slate-200/80 sticky top-0 z-30">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-sm">
+                    <!-- Waveform / Subtitle Icon -->
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg tracking-tight text-slate-900 leading-none">AudioScribe</h1>
+                    <p class="text-xs text-slate-500 mt-0.5">Audio to .SRT & .TXT Converter</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>Ready</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+            <!-- Left Column: Input Controls (5 cols on lg) -->
+            <div class="lg:col-span-5 flex flex-col gap-5">
+
+                <!-- Mode Switcher Tabs -->
+                <div class="bg-slate-200/70 p-1 rounded-xl grid grid-cols-2 gap-1" role="tablist">
+                    <button id="tab-upload" type="button" onclick="switchMode('upload')" role="tab" aria-selected="true"
+                        class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-semibold transition-all bg-white text-slate-900 shadow-sm">
+                        <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                        </svg>
+                        <span>Upload Audio File</span>
+                    </button>
+                    <button id="tab-live" type="button" onclick="switchMode('live')" role="tab" aria-selected="false"
+                        class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-medium transition-all text-slate-600 hover:text-slate-900">
+                        <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/>
+                        </svg>
+                        <span>Live Microphone</span>
+                    </button>
+                </div>
+
+                <!-- MODE 1: Upload Audio File Panel -->
+                <section id="panel-upload" class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5 sm:p-6 flex flex-col gap-5">
+                    <div>
+                        <h2 class="text-base font-semibold text-slate-900">Upload Audio File</h2>
+                        <p class="text-xs text-slate-500 mt-1">Transcribe MP3, WAV, M4A, or OGG files into timestamped subtitles using Gemini AI.</p>
+                    </div>
+
+                    <!-- Drag & Drop Zone -->
+                    <div id="drop-zone"
+                        class="relative border-2 border-dashed border-slate-300 hover:border-indigo-400 bg-slate-50/60 hover:bg-indigo-50/30 rounded-xl p-6 text-center transition-all cursor-pointer group">
+                        <input type="file" id="audio-file-input" accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm" class="hidden">
+                        <div class="w-11 h-11 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-3 group-hover:scale-105 transition-transform">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+                            </svg>
+                        </div>
+                        <p class="text-sm font-medium text-slate-700">
+                            <span class="text-indigo-600 font-semibold">Click to browse</span> or drag & drop audio here
+                        </p>
+                        <p class="text-xs text-slate-400 mt-1">MP3, WAV, M4A, OGG, WEBM (Max 20 MB)</p>
+                    </div>
+
+                    <!-- Selected File Card & Audio Preview Player -->
+                    <div id="file-preview-card" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                </div>
+                                <div class="min-w-0">
+                                    <p id="file-name" class="text-sm font-medium text-slate-800 truncate">audio.mp3</p>
+                                    <p id="file-meta" class="text-xs text-slate-500">0.0 MB</p>
+                                </div>
+                            </div>
+                            <button type="button" onclick="clearUploadedFile()" title="Remove file"
+                                class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <audio id="audio-player" controls class="w-full h-9 rounded-lg"></audio>
+                    </div>
+
+                    <!-- Language Selector -->
+                    <div class="flex flex-col gap-1.5">
+                        <label for="upload-language" class="text-xs font-semibold text-slate-700 uppercase tracking-wider">Audio Language</label>
+                        <select id="upload-language"
+                            class="w-full bg-white border border-slate-300 text-slate-800 text-sm rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all">
+                            <option value="Auto-detect" selected>Auto-detect Language</option>
+                            <option value="English">English</option>
+                            <option value="Hinglish">Hinglish (Hindi + English in Roman script)</option>
+                            <option value="Hindi">Hindi (हिन्दी)</option>
+                            <option value="Spanish">Spanish (Español)</option>
+                            <option value="French">French (Français)</option>
+                            <option value="German">German (Deutsch)</option>
+                            <option value="Japanese">Japanese (日本語)</option>
+                            <option value="Korean">Korean (한국어)</option>
+                            <option value="Mandarin Chinese">Chinese (中文)</option>
+                            <option value="Arabic">Arabic (العربية)</option>
+                            <option value="Portuguese">Portuguese (Português)</option>
+                        </select>
+                    </div>
+
+                    <!-- Transcribe Action Button -->
+                    <button id="btn-transcribe" type="button" onclick="transcribeUploadedAudio()" disabled
+                        class="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-semibold text-sm shadow-sm transition-all flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        <span>Generate SRT & TXT</span>
+                    </button>
+
+                    <!-- Progress Indicator -->
+                    <div id="upload-progress" class="hidden flex-col gap-2 pt-1">
+                        <div class="flex items-center justify-between text-xs font-medium">
+                            <span id="progress-status" class="text-indigo-600 flex items-center gap-2">
+                                <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                                Processing audio with Gemini AI...
+                            </span>
+                            <span id="progress-percent" class="text-slate-500 font-mono">25%</span>
+                        </div>
+                        <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div id="progress-bar" class="h-full bg-indigo-600 rounded-full transition-all duration-500" style="width: 25%"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- MODE 2: Live Microphone Panel -->
+                <section id="panel-live" class="hidden bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5 sm:p-6 flex-col gap-5">
+                    <div>
+                        <div class="flex items-center justify-between">
+                            <h2 class="text-base font-semibold text-slate-900">Live Microphone</h2>
+                            <span class="text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">Free • Browser Native</span>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1">Speak into your microphone to capture real-time subtitles with automatic start and end timestamps.</p>
+                    </div>
+
+                    <!-- Language Selector for SpeechRecognition -->
+                    <div class="flex flex-col gap-1.5">
+                        <label for="live-language" class="text-xs font-semibold text-slate-700 uppercase tracking-wider">Spoken Language</label>
+                        <select id="live-language"
+                            class="w-full bg-white border border-slate-300 text-slate-800 text-sm rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all">
+                            <option value="en-US" selected>English (US)</option>
+                            <option value="en-GB">English (UK)</option>
+                            <option value="en-IN">English / Hinglish (India)</option>
+                            <option value="hi-IN">Hindi (हिन्दी)</option>
+                            <option value="es-ES">Spanish (Español)</option>
+                            <option value="fr-FR">French (Français)</option>
+                            <option value="de-DE">German (Deutsch)</option>
+                            <option value="ja-JP">Japanese (日本語)</option>
+                            <option value="ko-KR">Korean (한국어)</option>
+                            <option value="zh-CN">Chinese (Mandarin)</option>
+                            <option value="ar-SA">Arabic (العربية)</option>
+                            <option value="pt-BR">Portuguese (Brazil)</option>
+                        </select>
+                    </div>
+
+                    <!-- Recording Controls Box -->
+                    <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-5 flex flex-col items-center text-center gap-4">
+                        <div class="relative flex items-center justify-center">
+                            <div id="mic-pulse" class="hidden absolute w-16 h-16 rounded-full bg-rose-400 recording-pulse"></div>
+                            <button id="btn-record-toggle" type="button" onclick="toggleLiveRecording()"
+                                class="relative z-10 w-14 h-14 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-md flex items-center justify-center transition-all focus:outline-none focus:ring-4 focus:ring-rose-500/25">
+                                <svg id="icon-mic-start" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/>
+                                </svg>
+                                <svg id="icon-mic-stop" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                    <rect x="6" y="6" width="12" height="12" rx="2"/>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div>
+                            <p id="live-status-text" class="text-sm font-semibold text-slate-800">Click microphone to start recording</p>
+                            <p id="live-timer" class="text-xs font-mono text-slate-500 mt-1">00:00:00</p>
+                        </div>
+
+                        <!-- Live Interim Speech Caption Box -->
+                        <div id="interim-box" class="hidden w-full bg-white border border-slate-200 rounded-lg p-3 text-left">
+                            <span class="text-[10px] font-semibold uppercase tracking-wider text-rose-500 block mb-1">Listening...</span>
+                            <p id="interim-text" class="text-xs text-slate-600 italic min-h-[1.25rem]">Speak clearly into your mic...</p>
+                        </div>
+                    </div>
+
+                    <div id="speech-warning" class="hidden bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl p-3">
+                        Your browser does not support the Web Speech API. Please use Google Chrome, Microsoft Edge, or Safari, or switch to the <strong>Upload Audio File</strong> tab.
+                    </div>
+                </section>
+
+            </div>
+
+            <!-- Right Column: Editable Transcript & Export Panel (7 cols on lg) -->
+            <div class="lg:col-span-7 bg-white rounded-2xl border border-slate-200/90 shadow-sm flex flex-col overflow-hidden">
+
+                <!-- Top Toolbar: Format Tabs & Clear Button -->
+                <div class="px-5 py-3.5 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+                    <div class="flex items-center gap-1.5 bg-slate-200/70 p-1 rounded-xl">
+                        <button id="format-tab-srt" type="button" onclick="switchOutputFormat('srt')"
+                            class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-white text-slate-900 shadow-sm">
+                            SRT Format
+                        </button>
+                        <button id="format-tab-txt" type="button" onclick="switchOutputFormat('txt')"
+                            class="px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-600 hover:text-slate-900">
+                            Plain TXT Format
+                        </button>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <span id="segment-counter" class="text-xs text-slate-500 font-medium px-2">0 cues</span>
+                        <button type="button" onclick="clearTranscript()" title="Clear transcript"
+                            class="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Editable Transcript Area -->
+                <div class="relative flex-1 flex flex-col p-4 sm:p-5">
+                    <textarea id="transcript-editor" rows="16" spellcheck="false"
+                        placeholder="Your generated subtitles (.SRT) or plain text (.TXT) will appear here. You can freely edit the text or timestamps before copying or downloading..."
+                        class="w-full flex-1 min-h-[340px] sm:min-h-[400px] resize-y bg-slate-50/70 border border-slate-200 rounded-xl p-4 text-sm text-slate-800 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white transition-all"></textarea>
+                </div>
+
+                <!-- Bottom Export Action Bar -->
+                <div class="px-5 py-4 border-t border-slate-200/80 bg-slate-50/60 flex flex-col gap-3">
+                    <!-- Max Words Per Segment Option Bar -->
+                    <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200/70">
+                        <label for="max-words-select" class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h10M4 18h7"/>
+                            </svg>
+                            <span>Max Words Per Segment (SRT):</span>
+                        </label>
+                        <div class="flex items-center gap-2">
+                            <select id="max-words-select" onchange="handleMaxWordsChange()"
+                                class="bg-white border border-slate-300 text-slate-800 text-xs font-medium rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all">
+                                <option value="0" selected>Unlimited (Original cues)</option>
+                                <option value="3">3 words / segment</option>
+                                <option value="5">5 words / segment</option>
+                                <option value="7">7 words / segment</option>
+                                <option value="10">10 words / segment</option>
+                                <option value="custom">Custom...</option>
+                            </select>
+                            <input id="max-words-custom" type="number" min="1" max="50" value="6" oninput="handleCustomMaxWordsInput()"
+                                placeholder="Words"
+                                class="hidden w-20 bg-white border border-slate-300 text-slate-800 text-xs font-medium rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all">
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons Row -->
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <button type="button" onclick="copyToClipboard()"
+                            class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-semibold shadow-sm transition-all">
+                            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                            </svg>
+                            <span>Copy to Clipboard</span>
+                        </button>
+
+                        <div class="flex items-center gap-2.5 w-full sm:w-auto">
+                            <button type="button" onclick="downloadFile('txt')"
+                                class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs sm:text-sm font-semibold transition-all">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                </svg>
+                                <span>Download .TXT</span>
+                            </button>
+
+                            <button type="button" onclick="downloadFile('srt')"
+                                class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-semibold shadow-sm transition-all">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                </svg>
+                                <span>Download .SRT</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-200/80 bg-white py-4 mt-8">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
+            <p>AudioScribe — Clean, browser-based subtitle & transcript generator.</p>
+            <p>Supports standard SubRip (.SRT) & UTF-8 Plain Text (.TXT)</p>
+        </div>
+    </footer>
+
+    <!-- Application Logic -->
+    <script>
+        // ==========================================
+        // 1. STATE MANAGEMENT
+        // ==========================================
+        const state = {
+            activeMode: 'upload',      // 'upload' | 'live'
+            outputFormat: 'srt',       // 'srt' | 'txt'
+            maxWordsPerSegment: 0,     // 0 = unlimited; > 0 = max words per SRT cue
+            segments: [],              // Array of { start: "00:00:00,000", end: "00:00:03,500", text: "..." }
+            customSrtContent: null,    // Tracks manual user edits in SRT view
+            customTxtContent: null,    // Tracks manual user edits in TXT view
+            uploadedFile: null,
+            uploadedFileUrl: null,
+            isRecording: false,
+            recognition: null,
+            recordingStartTime: null,
+            phraseStartTime: null,
+            timerInterval: null
+        };
+
+        // Gemini API Configuration (Runtime provides key automatically when empty)
+        const apiKey = "";
+        const GEMINI_MODEL = "gemini-3-flash-preview";
+
+        // ==========================================
+        // 2. INITIALIZATION & EVENT LISTENERS
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', () => {
+            setupDragAndDrop();
+            setupSpeechRecognition();
+            setupEditorListener();
+        });
+
+        function setupEditorListener() {
+            const editor = document.getElementById('transcript-editor');
+            editor.addEventListener('input', () => {
+                // Preserve manual user edits per format tab
+                if (state.outputFormat === 'srt') {
+                    state.customSrtContent = editor.value;
+                } else {
+                    state.customTxtContent = editor.value;
+                }
+            });
+        }
+
+        // ==========================================
+        // 3. UI NAVIGATION & TOAST NOTIFICATIONS
+        // ==========================================
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+
+            const styles = {
+                success: 'bg-slate-900 text-white border-slate-800',
+                error: 'bg-rose-600 text-white border-rose-700',
+                info: 'bg-white text-slate-800 border-slate-200 shadow-lg'
+            };
+
+            toast.className = `pointer-events-auto px-4 py-3 rounded-xl border text-xs sm:text-sm font-medium shadow-lg transition-all duration-300 transform translate-y-2 opacity-0 flex items-center gap-2.5 ${styles[type] || styles.info}`;
+            toast.innerHTML = `<span>${message}</span>`;
+
+            container.appendChild(toast);
+
+            // Animate in
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            // Remove after 3.2 seconds
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3200);
+        }
+
+        function switchMode(mode) {
+            state.activeMode = mode;
+
+            const tabUpload = document.getElementById('tab-upload');
+            const tabLive = document.getElementById('tab-live');
+            const panelUpload = document.getElementById('panel-upload');
+            const panelLive = document.getElementById('panel-live');
+
+            if (mode === 'upload') {
+                // Stop live recording if switching away
+                if (state.isRecording) stopLiveRecording();
+
+                tabUpload.className = "flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-semibold transition-all bg-white text-slate-900 shadow-sm";
+                tabLive.className = "flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-medium transition-all text-slate-600 hover:text-slate-900";
+
+                panelUpload.classList.remove('hidden');
+                panelUpload.classList.add('flex');
+                panelLive.classList.add('hidden');
+                panelLive.classList.remove('flex');
+            } else {
+                tabLive.className = "flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-semibold transition-all bg-white text-slate-900 shadow-sm";
+                tabUpload.className = "flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-medium transition-all text-slate-600 hover:text-slate-900";
+
+                panelLive.classList.remove('hidden');
+                panelLive.classList.add('flex');
+                panelUpload.classList.add('hidden');
+                panelUpload.classList.remove('flex');
+            }
+        }
+
+        function switchOutputFormat(format) {
+            state.outputFormat = format;
+
+            const tabSrt = document.getElementById('format-tab-srt');
+            const tabTxt = document.getElementById('format-tab-txt');
+            const editor = document.getElementById('transcript-editor');
+
+            if (format === 'srt') {
+                tabSrt.className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-white text-slate-900 shadow-sm";
+                tabTxt.className = "px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-600 hover:text-slate-900";
+                editor.classList.add('font-mono');
+                editor.classList.remove('font-sans');
+            } else {
+                tabTxt.className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-white text-slate-900 shadow-sm";
+                tabSrt.className = "px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-600 hover:text-slate-900";
+                editor.classList.remove('font-mono');
+                editor.classList.add('font-sans');
+            }
+
+            renderTranscriptEditor();
+        }
+
+        // ==========================================
+        // 4. FORMATTING & RENDERING HELPERS
+        // ==========================================
+        function formatMsToSrtTimestamp(ms) {
+            const totalMs = Math.max(0, Math.floor(ms));
+            const hours = Math.floor(totalMs / 3600000);
+            const minutes = Math.floor((totalMs % 3600000) / 60000);
+            const seconds = Math.floor((totalMs % 60000) / 1000);
+            const milliseconds = totalMs % 1000;
+
+            const pad2 = (n) => String(n).padStart(2, '0');
+            const pad3 = (n) => String(n).padStart(3, '0');
+
+            return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)},${pad3(milliseconds)}`;
+        }
+
+        function normalizeSrtTimestamp(ts) {
+            // Ensures timestamp conforms to HH:MM:SS,mmm
+            if (!ts) return "00:00:00,000";
+            let clean = ts.trim().replace('.', ',');
+            const parts = clean.split(',');
+            let timePart = parts[0] || "00:00:00";
+            let msPart = (parts[1] || "000").padEnd(3, '0').slice(0, 3);
+
+            const segments = timePart.split(':');
+            if (segments.length === 2) {
+                timePart = `00:${segments[0].padStart(2, '0')}:${segments[1].padStart(2, '0')}`;
+            } else if (segments.length === 3) {
+                timePart = `${segments[0].padStart(2, '0')}:${segments[1].padStart(2, '0')}:${segments[2].padStart(2, '0')}`;
+            }
+            return `${timePart},${msPart}`;
+        }
+
+        function parseSrtTimestampToMs(ts) {
+            const normalized = normalizeSrtTimestamp(ts);
+            const [timePart, msPart] = normalized.split(',');
+            const [hours, minutes, seconds] = timePart.split(':').map(Number);
+            return ((hours * 3600) + (minutes * 60) + seconds) * 1000 + Number(msPart);
+        }
+
+        function reflowSegmentsByMaxWords(segments, maxWords) {
+            if (!segments || segments.length === 0) return [];
+            if (!maxWords || maxWords <= 0) return segments;
+
+            const reflowed = [];
+
+            for (const seg of segments) {
+                const cleanText = (seg.text || '').trim();
+                if (!cleanText) continue;
+
+                const words = cleanText.split(/\s+/);
+                if (words.length <= maxWords) {
+                    reflowed.push({
+                        start: normalizeSrtTimestamp(seg.start),
+                        end: normalizeSrtTimestamp(seg.end),
+                        text: cleanText
+                    });
+                    continue;
+                }
+
+                const startMs = parseSrtTimestampToMs(seg.start);
+                const endMs = Math.max(startMs + 200, parseSrtTimestampToMs(seg.end));
+                const totalDuration = endMs - startMs;
+                const totalWords = words.length;
+
+                let wordOffset = 0;
+                while (wordOffset < totalWords) {
+                    const chunkWords = words.slice(wordOffset, wordOffset + maxWords);
+                    const chunkStartRatio = wordOffset / totalWords;
+                    const chunkEndRatio = (wordOffset + chunkWords.length) / totalWords;
+
+                    const chunkStartMs = Math.round(startMs + totalDuration * chunkStartRatio);
+                    const chunkEndMs = Math.max(chunkStartMs + 150, Math.round(startMs + totalDuration * chunkEndRatio));
+
+                    reflowed.push({
+                        start: formatMsToSrtTimestamp(chunkStartMs),
+                        end: formatMsToSrtTimestamp(chunkEndMs),
+                        text: chunkWords.join(' ')
+                    });
+
+                    wordOffset += maxWords;
+                }
+            }
+
+            return reflowed;
+        }
+
+        function getEffectiveSegments() {
+            return reflowSegmentsByMaxWords(state.segments, state.maxWordsPerSegment);
+        }
+
+        function handleMaxWordsChange() {
+            const select = document.getElementById('max-words-select');
+            const customInput = document.getElementById('max-words-custom');
+
+            if (select.value === 'custom') {
+                customInput.classList.remove('hidden');
+                const parsed = parseInt(customInput.value, 10);
+                state.maxWordsPerSegment = parsed > 0 ? parsed : 0;
+            } else {
+                customInput.classList.add('hidden');
+                state.maxWordsPerSegment = parseInt(select.value, 10) || 0;
+            }
+
+            // Reset manual SRT override so reflowed cues preview and download immediately
+            state.customSrtContent = null;
+            renderTranscriptEditor();
+        }
+
+        function handleCustomMaxWordsInput() {
+            const customInput = document.getElementById('max-words-custom');
+            const parsed = parseInt(customInput.value, 10);
+            state.maxWordsPerSegment = parsed > 0 ? parsed : 0;
+            state.customSrtContent = null;
+            renderTranscriptEditor();
+        }
+
+        function generateSrtString(segments) {
+            if (!segments || segments.length === 0) return "";
+            return segments.map((seg, idx) => {
+                const start = normalizeSrtTimestamp(seg.start);
+                const end = normalizeSrtTimestamp(seg.end);
+                return `${idx + 1}\n${start} --> ${end}\n${seg.text.trim()}`;
+            }).join('\n\n');
+        }
+
+        function generateTxtString(segments) {
+            if (!segments || segments.length === 0) return "";
+            return segments.map(seg => seg.text.trim()).join('\n');
+        }
+
+        function renderTranscriptEditor() {
+            const editor = document.getElementById('transcript-editor');
+            const counter = document.getElementById('segment-counter');
+            const effectiveSegments = getEffectiveSegments();
+
+            counter.textContent = `${effectiveSegments.length} ${effectiveSegments.length === 1 ? 'cue' : 'cues'}`;
+
+            if (state.outputFormat === 'srt') {
+                editor.value = state.customSrtContent !== null
+                    ? state.customSrtContent
+                    : generateSrtString(effectiveSegments);
+            } else {
+                editor.value = state.customTxtContent !== null
+                    ? state.customTxtContent
+                    : generateTxtString(state.segments);
+            }
+        }
+
+        function clearTranscript() {
+            state.segments = [];
+            state.customSrtContent = null;
+            state.customTxtContent = null;
+            renderTranscriptEditor();
+            showToast('Transcript cleared', 'info');
+        }
+
+        // ==========================================
+        // 5. FILE UPLOAD & GEMINI API TRANSCRIPTION
+        // ==========================================
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById('drop-zone');
+            const fileInput = document.getElementById('audio-file-input');
+
+            dropZone.addEventListener('click', () => fileInput.click());
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    handleFileSelection(e.target.files[0]);
+                }
+            });
+
+            ['dragenter', 'dragover'].forEach(evtName => {
+                dropZone.addEventListener(evtName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.add('border-indigo-500', 'bg-indigo-50/50');
+                });
+            });
+
+            ['dragleave', 'drop'].forEach(evtName => {
+                dropZone.addEventListener(evtName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+                });
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const files = e.dataTransfer?.files;
+                if (files && files[0]) {
+                    handleFileSelection(files[0]);
+                }
+            });
+        }
+
+        function handleFileSelection(file) {
+            const maxBytes = 20 * 1024 * 1024; // 20MB inline limit
+            if (file.size > maxBytes) {
+                showToast('File exceeds 20 MB limit. Please choose a smaller audio file.', 'error');
+                return;
+            }
+
+            if (state.uploadedFileUrl) {
+                URL.revokeObjectURL(state.uploadedFileUrl);
+            }
+
+            state.uploadedFile = file;
+            state.uploadedFileUrl = URL.createObjectURL(file);
+
+            document.getElementById('file-name').textContent = file.name;
+            document.getElementById('file-meta').textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB • ${file.type || 'Audio'}`;
+            document.getElementById('audio-player').src = state.uploadedFileUrl;
+
+            document.getElementById('file-preview-card').classList.remove('hidden');
+            document.getElementById('btn-transcribe').disabled = false;
+        }
+
+        function clearUploadedFile() {
+            if (state.uploadedFileUrl) {
+                URL.revokeObjectURL(state.uploadedFileUrl);
+            }
+            state.uploadedFile = null;
+            state.uploadedFileUrl = null;
+            document.getElementById('audio-file-input').value = '';
+            document.getElementById('audio-player').src = '';
+            document.getElementById('file-preview-card').classList.add('hidden');
+            document.getElementById('btn-transcribe').disabled = true;
+        }
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const result = reader.result;
+                    const base64 = result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function inferAudioMimeType(file) {
+            if (file.type && file.type.startsWith('audio/')) {
+                return file.type;
+            }
+            const ext = file.name.split('.').pop().toLowerCase();
+            const map = {
+                mp3: 'audio/mp3',
+                wav: 'audio/wav',
+                m4a: 'audio/mp4',
+                ogg: 'audio/ogg',
+                webm: 'audio/webm',
+                aac: 'audio/aac',
+                flac: 'audio/flac'
+            };
+            return map[ext] || 'audio/mp3';
+        }
+
+        async function fetchWithExponentialBackoff(url, options, maxRetries = 4) {
+            let delay = 1000;
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                const response = await fetch(url, options);
+                if (response.ok) {
+                    return response;
+                }
+                if (attempt === maxRetries || (response.status !== 429 && response.status < 500)) {
+                    const errText = await response.text();
+                    throw new Error(`API Error (${response.status}): ${errText}`);
+                }
+                await new Promise(res => setTimeout(res, delay));
+                delay *= 2;
+            }
+        }
+
+        async function transcribeUploadedAudio() {
+            if (!state.uploadedFile) return;
+
+            const btn = document.getElementById('btn-transcribe');
+            const progressWrap = document.getElementById('upload-progress');
+            const progressBar = document.getElementById('progress-bar');
+            const progressPercent = document.getElementById('progress-percent');
+            const progressStatus = document.getElementById('progress-status');
+            const language = document.getElementById('upload-language').value;
+
+            btn.disabled = true;
+            progressWrap.classList.remove('hidden');
+            progressWrap.classList.add('flex');
+            progressBar.style.width = '20%';
+            progressPercent.textContent = '20%';
+            progressStatus.lastChild.textContent = ' Encoding audio file...';
+
+            try {
+                const base64Audio = await fileToBase64(state.uploadedFile);
+                const mimeType = inferAudioMimeType(state.uploadedFile);
+
+                progressBar.style.width = '55%';
+                progressPercent.textContent = '55%';
+                progressStatus.lastChild.textContent = ' Transcribing with Gemini AI...';
+
+                let langInstruction = '';
+                if (language === 'Auto-detect') {
+                    langInstruction = 'Detect the spoken language automatically and transcribe in that original language.';
+                } else if (language === 'Hinglish') {
+                    langInstruction = 'Transcribe the spoken Hindi-English code-mixed speech naturally in Hinglish using clean Roman script (Latin alphabet) only, without Devanagari characters (for example: "Aaj hum ek naya project start karne wale hain").';
+                } else {
+                    langInstruction = `Transcribe the spoken audio in ${language}.`;
+                }
+
+                const prompt = `You are a professional subtitle transcription engine. Listen carefully to the attached audio and transcribe every spoken phrase accurately with exact start and end timestamps formatted strictly as HH:MM:SS,mmm (for example, 00:00:01,250). Break sentences into natural, readable subtitle segments (around 1-2 lines per cue). ${langInstruction}`;
+
+                const payload = {
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [
+                                { text: prompt },
+                                {
+                                    inlineData: {
+                                        mimeType: mimeType,
+                                        data: base64Audio
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "ARRAY",
+                            description: "List of timestamped subtitle cues.",
+                            items: {
+                                type: "OBJECT",
+                                properties: {
+                                    start: {
+                                        type: "STRING",
+                                        description: "Start timestamp in HH:MM:SS,mmm format"
+                                    },
+                                    end: {
+                                        type: "STRING",
+                                        description: "End timestamp in HH:MM:SS,mmm format"
+                                    },
+                                    text: {
+                                        type: "STRING",
+                                        description: "Transcribed text for this time segment"
+                                    }
+                                },
+                                required: ["start", "end", "text"]
+                            }
+                        }
+                    }
+                };
+
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+                const response = await fetchWithExponentialBackoff(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                progressBar.style.width = '90%';
+                progressPercent.textContent = '90%';
+                progressStatus.lastChild.textContent = ' Formatting SRT & TXT...';
+
+                const result = await response.json();
+                const rawJson = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!rawJson) {
+                    throw new Error("No transcription returned from the model.");
+                }
+
+                const parsedSegments = JSON.parse(rawJson);
+
+                if (!Array.isArray(parsedSegments) || parsedSegments.length === 0) {
+                    throw new Error("No speech could be detected in this audio file.");
+                }
+
+                state.segments = parsedSegments.map(item => ({
+                    start: normalizeSrtTimestamp(item.start),
+                    end: normalizeSrtTimestamp(item.end),
+                    text: (item.text || '').trim()
+                })).filter(item => item.text.length > 0);
+
+                state.customSrtContent = null;
+                state.customTxtContent = null;
+                renderTranscriptEditor();
+
+                progressBar.style.width = '100%';
+                progressPercent.textContent = '100%';
+                showToast('Audio transcribed successfully!', 'success');
+
+            } catch (error) {
+                console.error(error);
+                showToast(error.message || 'Failed to transcribe audio file.', 'error');
+            } finally {
+                btn.disabled = false;
+                setTimeout(() => {
+                    progressWrap.classList.add('hidden');
+                    progressWrap.classList.remove('flex');
+                    progressBar.style.width = '0%';
+                }, 900);
+            }
+        }
+
+        // ==========================================
+        // 6. LIVE MICROPHONE (WEB SPEECH API)
+        // ==========================================
+        function setupSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                document.getElementById('speech-warning').classList.remove('hidden');
+                document.getElementById('btn-record-toggle').disabled = true;
+                document.getElementById('btn-record-toggle').classList.add('opacity-50', 'cursor-not-allowed');
+                return;
+            }
+
+            const recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+
+            recognition.onstart = () => {
+                state.isRecording = true;
+                if (!state.recordingStartTime) {
+                    state.recordingStartTime = Date.now();
+                }
+                state.phraseStartTime = Date.now();
+                updateRecordingUI(true);
+            };
+
+            recognition.onspeechstart = () => {
+                // Capture exact moment a new phrase begins
+                state.phraseStartTime = Date.now();
+            };
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const result = event.results[i];
+                    const transcript = result[0].transcript;
+
+                    if (result.isFinal) {
+                        const now = Date.now();
+                        const startMs = Math.max(0, (state.phraseStartTime || now - 1500) - state.recordingStartTime);
+                        const endMs = Math.max(startMs + 500, now - state.recordingStartTime);
+
+                        state.segments.push({
+                            start: formatMsToSrtTimestamp(startMs),
+                            end: formatMsToSrtTimestamp(endMs),
+                            text: transcript.trim()
+                        });
+
+                        // Reset custom overrides so newly spoken phrases appear immediately
+                        state.customSrtContent = null;
+                        state.customTxtContent = null;
+                        renderTranscriptEditor();
+
+                        // Reset phrase start for next utterance
+                        state.phraseStartTime = Date.now();
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                const interimTextEl = document.getElementById('interim-text');
+                interimTextEl.textContent = interimTranscript || 'Listening for speech...';
+            };
+
+            recognition.onerror = (event) => {
+                if (event.error === 'not-allowed') {
+                    showToast('Microphone permission denied. Please allow mic access.', 'error');
+                    stopLiveRecording();
+                } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
+                    showToast(`Microphone error: ${event.error}`, 'error');
+                }
+            };
+
+            recognition.onend = () => {
+                // Automatically restart if user hasn't clicked Stop (handles browser silence timeouts)
+                if (state.isRecording) {
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        stopLiveRecording();
+                    }
+                } else {
+                    updateRecordingUI(false);
+                }
+            };
+
+            state.recognition = recognition;
+        }
+
+        function toggleLiveRecording() {
+            if (!state.recognition) return;
+            if (state.isRecording) {
+                stopLiveRecording();
+            } else {
+                startLiveRecording();
+            }
+        }
+
+        function startLiveRecording() {
+            const lang = document.getElementById('live-language').value;
+            state.recognition.lang = lang;
+            state.recordingStartTime = Date.now();
+            state.phraseStartTime = Date.now();
+            state.isRecording = true;
+
+            try {
+                state.recognition.start();
+                startTimer();
+                showToast('Microphone recording started', 'info');
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function stopLiveRecording() {
+            state.isRecording = false;
+            stopTimer();
+            if (state.recognition) {
+                try {
+                    state.recognition.stop();
+                } catch (e) {}
+            }
+            updateRecordingUI(false);
+            showToast('Recording stopped', 'info');
+        }
+
+        function updateRecordingUI(isRecording) {
+            const micPulse = document.getElementById('mic-pulse');
+            const iconStart = document.getElementById('icon-mic-start');
+            const iconStop = document.getElementById('icon-mic-stop');
+            const statusText = document.getElementById('live-status-text');
+            const interimBox = document.getElementById('interim-box');
+
+            if (isRecording) {
+                micPulse.classList.remove('hidden');
+                iconStart.classList.add('hidden');
+                iconStop.classList.remove('hidden');
+                statusText.textContent = 'Recording in progress... Click to stop';
+                statusText.classList.add('text-rose-600');
+                interimBox.classList.remove('hidden');
+            } else {
+                micPulse.classList.add('hidden');
+                iconStart.classList.remove('hidden');
+                iconStop.classList.add('hidden');
+                statusText.textContent = 'Click microphone to start recording';
+                statusText.classList.remove('text-rose-600');
+                interimBox.classList.add('hidden');
+            }
+        }
+
+        function startTimer() {
+            stopTimer();
+            const timerEl = document.getElementById('live-timer');
+            state.timerInterval = setInterval(() => {
+                if (!state.recordingStartTime) return;
+                const elapsed = Date.now() - state.recordingStartTime;
+                const hours = Math.floor(elapsed / 3600000);
+                const minutes = Math.floor((elapsed % 3600000) / 60000);
+                const seconds = Math.floor((elapsed % 60000) / 1000);
+                timerEl.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            }, 500);
+        }
+
+        function stopTimer() {
+            if (state.timerInterval) {
+                clearInterval(state.timerInterval);
+                state.timerInterval = null;
+            }
+        }
+
+        // ==========================================
+        // 7. CLIPBOARD & FILE EXPORT (.SRT & .TXT)
+        // ==========================================
+        function copyToClipboard() {
+            const editor = document.getElementById('transcript-editor');
+            if (!editor.value.trim()) {
+                showToast('Nothing to copy yet!', 'error');
+                return;
+            }
+
+            editor.select();
+            editor.setSelectionRange(0, 999999);
+            try {
+                document.execCommand('copy');
+                window.getSelection().removeAllRanges();
+                showToast(`Copied ${state.outputFormat.toUpperCase()} to clipboard!`, 'success');
+            } catch (err) {
+                showToast('Unable to copy text.', 'error');
+            }
+        }
+
+        function downloadFile(type) {
+            let content = '';
+            const effectiveSegments = getEffectiveSegments();
+
+            if (type === 'srt') {
+                content = state.outputFormat === 'srt'
+                    ? document.getElementById('transcript-editor').value
+                    : (state.customSrtContent !== null ? state.customSrtContent : generateSrtString(effectiveSegments));
+            } else {
+                content = state.outputFormat === 'txt'
+                    ? document.getElementById('transcript-editor').value
+                    : (state.customTxtContent !== null ? state.customTxtContent : generateTxtString(state.segments));
+            }
+
+            if (!content.trim()) {
+                showToast('Generate or enter a transcript before downloading.', 'error');
+                return;
+            }
+
+            const baseName = state.uploadedFile
+                ? state.uploadedFile.name.replace(/\.[^/.]+$/, "")
+                : `transcript_${new Date().toISOString().slice(0, 10)}`;
+
+            const filename = `${baseName}.${type}`;
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            showToast(`Downloaded ${filename}`, 'success');
+        }
+    </script>
+</body>
+</html>
